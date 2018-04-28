@@ -1,7 +1,5 @@
 # Parametric g-formula development
-- Example from Maarten Bijilsma
-
- with notes on needed development.
+- Example from Maarten Bijlsma with notes on needed development.
 
 # Helpful references
 - Overview: https://www.demogr.mpg.de/papers/working/wp-2017-013.pdf
