@@ -1,0 +1,11 @@
+IDEA 1:
+- Use Add Health public-use data (five waves) as proof of concept for the longitudinal, "causal" parametric g-formula with various interventions.
+
+IDEA 2:
+- Focus on space, migration with US county-level mortality, education, poverty (do we have a dataset we could use to estimate all these relationships?)
+	- Do a multi-state life-table approach in this same framework (simulate synthetic cohort from ACS/Census through cross-sectional transition probabilities?)
+	- Personally, I think of the g-formula with probabilities derived from cross-sectional data (rather than longitudinal) as just a multi-state life-table that allows for the full range of conditional transition probabilities.
+		- Maarten said he thinks this interpretation is pretty much true.
+	- Not approximating causal effects very well because no t-1 relationships, but could still disentangle effect of migration on county-level poverty, education, mortality accounting for the full range of conditional transition probabilities.
+	- What happens to county-level mortality rates DIRECTLY as a result of migration? How does migration affect the SES composition for counties?
+	- We would need to calibrate a lot to make sure our aged synthetic cohort in 2015 approximates the SES/mortality distribution of observed 2015 (to make sure migration hasn't gone haywire)
