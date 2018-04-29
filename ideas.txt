@@ -9,3 +9,11 @@ IDEA 2:
 	- Not approximating causal effects very well because no t-1 relationships, but could still disentangle effect of migration on county-level poverty, education, mortality accounting for the full range of conditional transition probabilities.
 	- What happens to county-level mortality rates DIRECTLY as a result of migration? How does migration affect the SES composition for counties?
 	- We would need to calibrate a lot to make sure our aged synthetic cohort in 2015 approximates the SES/mortality distribution of observed 2015 (to make sure migration hasn't gone haywire)
+- Thoughts/concerns
+	- I'm trying to think about how this might work (or not) with estimated county-level probabilities being applied to simulants rather than probabilities derived from microdata.
+	- Seems like this would be much easier to estimate given data availability (we could just use an INLA spatial GLM at each time point with mortality/SES data from NCHS/ACS).
+	- I think this is also totally sound as a means of prediction, but not causal inference, because it's essentially just a big life-table (like COMO, which applies probabilities derived from country/age/sex data to individual simulants).
+	- Say we did 2000-2015. We would simulate a synthetic cohort (with the 2000 individual distributions of SES from ACS or something) through to 2015, and would just calibrate our models based on how the resulting simulant distributions match up with the observed 2015 distributions.
+	- If it matches up, great. This means that we can then dig into the changes over time at the county-level in a way we can't do with any empirical dataset. 
+	- We can't do the causual inference style mediation, BUT we can decompose changes in everything within our simulated population.
+		- What % of change in mortality at the county-level was due to pop changes from migration? SES? Direct/indirect of both?
