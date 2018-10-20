@@ -66,7 +66,9 @@ lags <- list(
 )
 
 # here are the deterministic and probabilistic rules
+# If we want to do scenarios we would chnage these rules or the starting values.
 rules <- list(
+    agegroup = function(DF, ...) binAges(DF$age),
     birth = function(DF, models) simPredict(DF, models, 1),
     job = function(DF, models) simPredict(DF, models, 2),
     partner = function(DF, models) simPredict(DF, models, 3),
@@ -75,22 +77,87 @@ rules <- list(
     censor = function(DF, models) simPredict(DF, models, 4)
 )
 
-boots <- 6 # number of bootstraps
+boots <- 100 # number of bootstraps 100 takes a while
 replicationSize <- 6 # number of monte carlo replication
 
-bootruns <- mclapply(1:boots, function(b){
-    # sample individuals with replacement not rows
-    sampleDF <- DF %>%
-        select(id) %>%
-        unique %>%
-        sample_frac(replace=TRUE) %>%
-        right_join(DF)
+set.seed(123)
+
+if(!file.exists("./bootruns.Rds")){
+    bootruns <- mclapply(1:boots, function(b){
+        # sample individuals with replacement not rows
+        sampleDF <- DF %>%
+            select(id) %>%
+            unique %>%
+            sample_frac(replace=TRUE) %>%
+            right_join(DF)
+        
+        # Fit the model
+        gfitboot <- gfit.init(formulas, families, functions, data=sampleDF)
+        
+        # Run the "natural course" rules
+        mcDF <- bind_rows(lapply(1:replicationSize, function(i) sampleDF))
+        naturalDF <- progressSimulation(mcDF, lags, rules, gfitboot)
+        list(natural=naturalDF)
+    }, mc.cores=6)
     
-    # Fit the model
-    gfitboot <- gfit.init(formulas, families, functions, data=sampleDF)
-    
-    # Run the "natural course" rules
-    mcDF <- bind_rows(lapply(1:replicationSize, function(i) sampleDF))
-    naturalDF <- progressSimulation(mcDF, lags, rules, gfitboot)
-    list(natural=naturalDF, models=gfitboot)
-}, mc.cores=6)
+    saveRDS(bootruns, "./bootruns.Rds")
+}
+
+bootruns <- read_rds("./bootruns.Rds")
+
+pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
+    bootruns[[i]]$natural %>%
+        mutate(sim=i)})) %>%
+    group_by(age, sim) %>%
+    summarize(
+        nbirths = sum(birth), 
+        nmoms = n(),
+        pedu = mean(job == "edu"),
+        pother = mean(job == "other"),
+        pfull = mean(job == "full"),
+        psingle = mean(partner == "single"),
+        pmarried = mean(partner == "married"),
+        pcohab = mean(partner == "cohab")) %>%
+    mutate(pbirths=nbirths/nmoms) %>%
+    select(-nbirths, -nmoms)
+
+actualDF <- DF %>%
+    group_by(age) %>%
+    summarize(
+        nbirths = sum(birth), 
+        nmoms = n(),
+        pedu = mean(job == "edu"),
+        pother = mean(job == "other"),
+        pfull = mean(job == "full"),
+        psingle = mean(partner == "single"),
+        pmarried = mean(partner == "married"),
+        pcohab = mean(partner == "cohab")) %>%
+    mutate(pbirths=nbirths/nmoms) %>%
+    select(-nbirths, -nmoms) %>%
+    gather("measure", "mean", -age) %>%
+    mutate(type="Observed")
+
+
+# I dont feel great about these confidence intervals we should talk about this
+# Also this hould be automated
+pSimsDF %>%
+    select(-sim) %>%
+    summarise_all(
+        list(
+            mean = mean, 
+            lwr = function(x) quantile(x, probs=.025),
+            upr = function(x) quantile(x, probs=.975))) %>%
+    ungroup %>%
+    gather("Metric", "Value", -age) %>%
+    mutate(measure=gsub("_[A-z ]*", "", Metric)) %>%
+    mutate(statistic=gsub("[A-z ]*_", "", Metric)) %>%
+    select(-Metric) %>%
+    spread("statistic", "Value") %>%
+    mutate(type="Estimate") %>%
+    bind_rows(actualDF) %>%
+    filter(measure != "pother") %>%
+    ggplot(aes(x=age, y=mean, group=type, color=type, fill=type)) +
+    geom_line(linetype=3) +
+    geom_ribbon(aes(ymin=lwr, ymax=upr), alpha=.2) +
+    theme_classic() +
+    facet_wrap(~measure)

@@ -1,3 +1,4 @@
+# function for running multiple moel fits simulataneously
 gfit.init <- function(formulas, families, functions, data=NULL, kwargs=NULL){
     if(class(formulas) != "list"){
         stop("formulas argument must be a list of formulas.")
