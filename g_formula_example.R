@@ -6,7 +6,7 @@
 ## An example application of the parametric g-formula
 ## using an artificially created fertility dataset
 
-setwd('C:/Users/ngraetz/Documents/repos/g_formula')
+#setwd('C:/Users/ngraetz/Documents/repos/g_formula')
 
 # Load the data (see supplemental material)
 ex.dat <- read.csv(file='ex.csv',head=T)
@@ -225,8 +225,14 @@ for(bs in 1:bssize) {
   ex.sample <- rbind(ex.sample,ex.sample,ex.sample,ex.sample,ex.sample,
                      ex.sample,ex.sample,ex.sample,ex.sample,ex.sample)
   
-  ## Nick TO-DO: two options for assessing convergence on the direct/indirect effects. 1. Brute force, as currently set up: run with different numbers of copies above
-  ## (5, 10, 20, 30) and show that estimates of effects converge at a certain number of copies. 2. Rewrite to actually do the MCMC loop, and keep track of when effects converge.
+  ## Nick TO-DO: two options for assessing convergence on the direct/indirect 
+  # effects. 
+  # 1. Brute force, as currently set up: run with different numbers of copies 
+  # above
+  # (5, 10, 20, 30) and show that estimates of effects converge at a certain 
+  # number of copies. 
+  # 2. Rewrite to actually do the MCMC loop, and keep track of when effects 
+  # converge.
   ## I think we can also parallelize the shit out of this. 
   
   # since individuals were drawn with replacement
@@ -244,11 +250,15 @@ for(bs in 1:bssize) {
   # start a loop that moves through the follow-up time units
   # this part of the g-formula tries to reproduce the empirical data
   # and is known as the 'natural course'
-  # Nick TO-DO: right now just predicting t from t-1. We could make this an actual autoregressive model instead of simply lagged variables.
-  # Really all of these models can change. The trick is just writing predict functions and wrapping everything up in the g-formula bootstrap/MC loop to run efficiently.
+  # Nick TO-DO: right now just predicting t from t-1. We could make this an 
+  # actual autoregressive model instead of simply lagged variables.
+  # Really all of these models can change. The trick is just writing predict 
+  # functions and wrapping everything up in the g-formula bootstrap/MC loop to 
+  # run efficiently.
   # I think there's a ton of space to improve this.
   
-  ## Nick TO-DO: remove a lot of this hard-coding around the dimensions of this specific dataset. Add as arguments to functions.
+  ## Nick TO-DO: remove a lot of this hard-coding around the dimensions of this 
+  # specific dataset. Add as arguments to functions.
   for(t in 1987:2008) {
     
     message(paste0('Predicting natural course, ', t))
@@ -260,7 +270,8 @@ for(bs in 1:bssize) {
     
     # update the age categories
     ex.sample.temp$age1522 <- ifelse(ex.sample.temp$age <= 22,1,0)
-    ex.sample.temp$age2329 <- ifelse(ex.sample.temp$age >= 23 & ex.sample.temp$age <= 29,1,0)
+    ex.sample.temp$age2329 <- ifelse(
+        ex.sample.temp$age >= 23 & ex.sample.temp$age <= 29,1,0)
     ex.sample.temp$age30pl <- ifelse(ex.sample.temp$age >= 30,1,0)
     
     # lag values: since the new values for t have not yet been produced
@@ -284,21 +295,25 @@ for(bs in 1:bssize) {
     # but if we allowed variables in year t to affect other variables
     # in year t, the order of the predictions must follow that causal ordering
     
-    ## Nick TO-DO: I feel like we could just fit all the models within year t simultaneously to avoid having to care about order...
+    ## Nick TO-DO: I feel like we could just fit all the models within year t 
+    # simultaneously to avoid having to care about order...
     ## But also possible there would just be identification problems.
     
     # predict birth
-    ex.sample$birth[ex.sample$year==t] <- binomial.predict(fit.bsf.birth, ex.sample[ex.sample$year==t,])
+    ex.sample$birth[ex.sample$year==t] <- binomial.predict(
+        fit.bsf.birth, ex.sample[ex.sample$year==t,])
     
     # update totalbirth
     # totalbirth is the totalbirth value that we had last year, plus
     # the birth that just happened (1) or not (0)
-    ex.sample$totalbirth[ex.sample$year==t] <- ex.sample$l.totalbirth[ex.sample$year==t] +
-      ex.sample$birth[ex.sample$year==t]
+    ex.sample$totalbirth[ex.sample$year==t] <- 
+        ex.sample$l.totalbirth[ex.sample$year==t] +
+        ex.sample$birth[ex.sample$year==t]
     
     # predict job (includes education)
-    x <- multinomial.predict.3var(fit.bsf.job.full,fit.bsf.job.edu,fit.bsf.job.other,
-                                  ex.sample[ex.sample$year==t,])
+    x <- multinomial.predict.3var(
+        fit.bsf.job.full,fit.bsf.job.edu,fit.bsf.job.other,
+        ex.sample[ex.sample$year==t,])
     ex.sample$job.full[ex.sample$year==t] <- x[,1]
     ex.sample$job.edu[ex.sample$year==t] <- x[,2]
     ex.sample$job.other[ex.sample$year==t] <- x[,3]
@@ -311,8 +326,11 @@ for(bs in 1:bssize) {
       ex.sample$job.edu[ex.sample$year==t]
     
     # predict partnership
-    x <- multinomial.predict.3var(fit.bsf.partner.married,fit.bsf.partner.cohab,fit.bsf.partner.single,
-                                  ex.sample[ex.sample$year==t,])
+    x <- multinomial.predict.3var(
+        fit.bsf.partner.married,
+        fit.bsf.partner.cohab,
+        fit.bsf.partner.single,
+        ex.sample[ex.sample$year==t,])
     ex.sample$partner.married[ex.sample$year==t] <- x[,1]
     ex.sample$partner.cohab[ex.sample$year==t] <- x[,2]
     ex.sample$partner.single[ex.sample$year==t] <- x[,3]
@@ -334,7 +352,8 @@ for(bs in 1:bssize) {
     message(paste0('Predicting counterfactual, ', t))
     # make a copy of the previous row and then update year and age
     # but don't make a copy if someone was censored in the previous year
-    ex.sample.2.temp <- ex.sample.2[ex.sample.2$year==(t-1) & ex.sample.2$censor!=1,]
+    ex.sample.2.temp <- 
+        ex.sample.2[ex.sample.2$year==(t-1) & ex.sample.2$censor!=1,]
     ex.sample.2.temp$year <- ex.sample.2.temp$year+1
     ex.sample.2.temp$age <- ex.sample.2.temp$age+1
     
