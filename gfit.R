@@ -44,6 +44,18 @@ simPredict <- function(DF, model_list, model_index){
     sim
 }
 
+# Helper function for drawing stochastically from natural course distribution (right now just multinomial and logistic).
+simNatural <- function(naturalDF, model_list, model_index){
+  model_ <- model_list[[model_index]]
+  if(class(model_)[1] == "multinom"){
+    
+  }
+  else{
+
+  }
+  sim
+}
+
 # run the lag updates and the deterministic and probabilistic rules
 progressSimulation <- function(data, lags, rules, models){
     require(dplyr)

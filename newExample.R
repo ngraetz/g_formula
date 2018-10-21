@@ -1,5 +1,11 @@
 rm(list=ls())
 
+## Options needed for this run.
+repo <- 'C:/Users/Nick/Documents/repos/g_formula/'
+local_cores <- 4
+
+## Set up packages and functions.
+setwd(repo)
 library(tidyverse)
 library(nnet)
 library(parallel)
@@ -77,13 +83,16 @@ rules <- list(
     censor = function(DF, models) simPredict(DF, models, 4)
 )
 
-boots <- 100 # number of bootstraps 100 takes a while
+boots <- 15 # number of bootstraps 100 takes a while
 replicationSize <- 6 # number of monte carlo replication
+## I feel like this will be a time hog and we can parallelize it instead of rbinding... but maybe it doesn't slow it down that much.
 
 set.seed(123)
 
 if(!file.exists("./bootruns.Rds")){
-    bootruns <- mclapply(1:boots, function(b){
+  
+    bootruns <- mclapply(1:boots, function(b) {
+      
         # sample individuals with replacement not rows
         sampleDF <- DF %>%
             select(id) %>%
@@ -95,10 +104,11 @@ if(!file.exists("./bootruns.Rds")){
         gfitboot <- gfit.init(formulas, families, functions, data=sampleDF)
         
         # Run the "natural course" rules
-        mcDF <- bind_rows(lapply(1:replicationSize, function(i) sampleDF))
+        mcDF <- bind_rows(lapply(1:replicationSize, function(i) sampleDF)) 
         naturalDF <- progressSimulation(mcDF, lags, rules, gfitboot)
         list(natural=naturalDF)
-    }, mc.cores=6)
+        
+    }, mc.cores=local_cores)
     
     saveRDS(bootruns, "./bootruns.Rds")
 }
@@ -161,3 +171,31 @@ pSimsDF %>%
     geom_ribbon(aes(ymin=lwr, ymax=upr), alpha=.2) +
     theme_classic() +
     facet_wrap(~measure)
+
+## ESTIMATING EFFECTS: calculate controlled direct effect (CDE) of education by editing rules list and rerunning.
+## Key change: we need a new rule for when we want to update a variable by pulling from the natural course DF. So this requires
+## having estimated the natural course already. Instead of simPredict(), we use simScenario() for everything except the outcome. We still 
+## simulate probabilistically the outcome (and the censoring...?). 
+##    simScenario() = draw stochastically from the natural course distribution (or intervention distribution) of the variable at time t.
+##
+## Notes: I'm confused now though... maybe we always need a reference scenario DF to compare to the natural course DF. Like Maarten intervenes on 
+## partner in the input DF, simulates a new scenario DF, and then calculates effects by simulating and drawing from the intervention scenario
+## for partner and drawing natural course for job. Soooo I guess if you want to know the effect of a variable, you need to frame it as the effect
+## of some difference (like having college education instead of high school) so that you have a reference set. So I guess our two rules would be:
+##    simPredict() = used to update all probabilistic things in the natural course (or any scenario where we edit the input DF).
+##    simScenario() = used to update all probabilitic things in effect calculations by drawing stochastically from the target variable distribution 
+##                    at time t for whatever DF you give it.
+##
+## So I thiiiiink the way we want to do this is always hand all rules the DF to update, the natural course DF, and the intervention DF. And then
+## in the function the rule uses to actually update values, we manipulate which DF it should use based on what direct/indirect effect we are
+## estimating.
+rules <- list(
+  agegroup = function(DF, ...) binAges(DF$age), # Still deterministic.
+  birth = function(DF, natural_DF, intervention_DF, models, ...) simPredict(DF, models, 1), # Still probabilistic based on model.
+  job = function(DF, natural_DF, intervention_DF, models) simScenario(natural_DF, models, 2), # Draw stochastically from natural course.
+  partner = function(DF, natural_DF, intervention_DF, models) simScenario(intervention_DF, models, 3), # Draw stochastically from intervention.
+  totaledu = function(DF, ...) DF$totaledu + (DF$job == "edu"), # Still deterministic.
+  totalbirth = function(DF, ...) DF$totalbirth + DF$birth, # Still deterministic.
+  censor = function(DF, natural_DF, intervention_DF, models, ...) simPredict(DF, models, 4) # Still probabilistic based on model (?).
+)
+
