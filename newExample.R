@@ -106,6 +106,9 @@ if(!file.exists("./bootruns.Rds")){
         # Run the "natural course" rules
         mcDF <- bind_rows(lapply(1:replicationSize, function(i) sampleDF)) 
         naturalDF <- progressSimulation(mcDF, lags, rules, gfitboot)
+        # Run the "intervention course" rules
+        
+        # Return all courses simulated
         list(natural=naturalDF)
         
     }, mc.cores=local_cores)
@@ -167,8 +170,8 @@ pSimsDF %>%
     bind_rows(actualDF) %>%
     filter(measure != "pother") %>%
     ggplot(aes(x=age, y=mean, group=type, color=type, fill=type)) +
-    geom_line(linetype=3) +
-    geom_ribbon(aes(ymin=lwr, ymax=upr), alpha=.2) +
+    geom_line(size=1) +
+    geom_ribbon(aes(ymin=lwr, ymax=upr), alpha=.9) +
     theme_classic() +
     facet_wrap(~measure)
 
@@ -192,10 +195,22 @@ pSimsDF %>%
 rules <- list(
   agegroup = function(DF, ...) binAges(DF$age), # Still deterministic.
   birth = function(DF, natural_DF, intervention_DF, models, ...) simPredict(DF, models, 1), # Still probabilistic based on model.
-  job = function(DF, natural_DF, intervention_DF, models) simScenario(natural_DF, models, 2), # Draw stochastically from natural course.
-  partner = function(DF, natural_DF, intervention_DF, models) simScenario(intervention_DF, models, 3), # Draw stochastically from intervention.
+  job = function(DF, natural_DF, intervention_DF, models) simScenario(DF, natural_DF, models, 2), # Draw stochastically from natural course.
+  partner = function(DF, natural_DF, intervention_DF, models) simScenario(DF, intervention_DF, models, 3), # Draw stochastically from intervention.
   totaledu = function(DF, ...) DF$totaledu + (DF$job == "edu"), # Still deterministic.
   totalbirth = function(DF, ...) DF$totalbirth + DF$birth, # Still deterministic.
   censor = function(DF, natural_DF, intervention_DF, models, ...) simPredict(DF, models, 4) # Still probabilistic based on model (?).
 )
+
+# 1. "now let's create a counterfactual dataset for the TOTAL EFFECT
+# where we intervene on the data in some way
+# we will not allow marriage: we make these people single instead." - Maarten
+## INTERVENTION RULES: marriage=0, single=1
+
+# 2. "now let's create a counterfactual dataset for the NATURAL DIRECT EFFECT
+# to achieve this, the mediator distribution must be taken from the intervention scenario
+# and the exposure from the natural course." - Maarten
+## Nick: I think his comment is wrong above, we want to take the mediators from the intervention and the exposure from the intervention.
+## (you're removing all the indirect pathways beyond marriage through which the intervention operates on births).
+
 

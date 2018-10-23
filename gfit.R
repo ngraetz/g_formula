@@ -45,13 +45,31 @@ simPredict <- function(DF, model_list, model_index){
 }
 
 # Helper function for drawing stochastically from natural course distribution (right now just multinomial and logistic).
-simNatural <- function(naturalDF, model_list, model_index){
+# Nick note: I don't totally understand why we draw stochastically from the variable distribution instead of literally using the 
+# values for each individual from the desired course... doesn't this kind of fuck up the covariance within individuals... 
+simScenario <- function(DF, course_DF, model_list, model_index){
   model_ <- model_list[[model_index]]
+  target_var_name <- all.vars(model_$call$formula)[1] ## Infer target variable from DV specified in model formula.
   if(class(model_)[1] == "multinom"){
-    
+    ## Get probability distribution from provided course simulation (natural course or intervention course).
+    course_probs <- course_DF %>%              ## Use course DF to get probability distribution.
+      filter(year == max(DF$year)) %>%         ## Sample over course distribution in the year currently being updated.
+      select_(target = target_var_name) %>%
+      count(target) %>%
+      mutate(freq = n / sum(n)) %>% 
+      select(target, freq) %>%
+      spread(target, freq)
+    probs <- do.call("rbind", replicate(nrow(DF), course_probs, simplify = FALSE))
+    opts <- colnames(probs)
+    sim <- apply(probs, 1, function(p) sample(opts, 1, prob=p))
   }
   else{
-
+    course_prob <- course_DF %>% 
+      filter(year == max(DF$year)) %>%
+      select_(target = target_var_name) %>%
+      summarise(mean(target, na.rm=T))
+    probs <- rep(as.numeric(course_prob), nrow(DF))
+    sim <- rbinom(nrow(DF), 1, probs)
   }
   sim
 }
