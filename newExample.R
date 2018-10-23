@@ -71,8 +71,7 @@ lags <- list(
     l.partner = function(DF) DF %>% mutate(l.partner=lag(partner))
 )
 
-# here are the deterministic and probabilistic rules
-# If we want to do scenarios we would chnage these rules or the starting values.
+# Here are the natural deterministic and probabilistic rules.
 rules <- list(
     agegroup = function(DF, ...) binAges(DF$age),
     birth = function(DF, models) simPredict(DF, models, 1),
@@ -82,10 +81,15 @@ rules <- list(
     totalbirth = function(DF, ...) DF$totalbirth + DF$birth,
     censor = function(DF, models) simPredict(DF, models, 4)
 )
+# To calculate direct/indirect effects, we need an intervention to be enforced within the simulated data under the same natural rules. 
+# Let's test replacing any partner='married' with partner='single'; that is, we will be calculating the effect of marriage in our natural course (Maarten's example).
+# Maybe there is a better logic to this, but below we specify each intervention rule to be enforced of the form c(variable, values, replacement)
+intervention_rules <- list(
+  c('partner','married','single') 
+)
 
-boots <- 15 # number of bootstraps 100 takes a while
-replicationSize <- 6 # number of monte carlo replication
-## I feel like this will be a time hog and we can parallelize it instead of rbinding... but maybe it doesn't slow it down that much.
+boots <- 15 # Number of bootstraps, 100 takes a while
+replicationSize <- 6 # Replicate this bootstrap an arbitrary amount of times to reduce Monte Carlo error (would need to show this converges)
 
 set.seed(123)
 
@@ -93,7 +97,7 @@ if(!file.exists("./bootruns.Rds")){
   
     bootruns <- mclapply(1:boots, function(b) {
       
-        # sample individuals with replacement not rows
+        # Sample individuals with replacement not rows
         sampleDF <- DF %>%
             select(id) %>%
             unique %>%
@@ -103,13 +107,17 @@ if(!file.exists("./bootruns.Rds")){
         # Fit the model
         gfitboot <- gfit.init(formulas, families, functions, data=sampleDF)
         
-        # Run the "natural course" rules
+        # Replicate this bootstrap an arbitrary amount of times to reduce Monte Carlo error (would need to show this converges)
         mcDF <- bind_rows(lapply(1:replicationSize, function(i) sampleDF)) 
+        
+        # Run the "natural course" rules
         naturalDF <- progressSimulation(mcDF, lags, rules, gfitboot)
+        
         # Run the "intervention course" rules
+        interventionDF <- progressSimulation(mcDF, lags, rules, gfitboot)
         
         # Return all courses simulated
-        list(natural=naturalDF)
+        list(natural=naturalDF, intervention=interventionDF)
         
     }, mc.cores=local_cores)
     

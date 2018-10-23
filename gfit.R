@@ -74,6 +74,14 @@ simScenario <- function(DF, course_DF, model_list, model_index){
   sim
 }
 
+# Helper function to enforce specified intervention to a dataset after it is updated in each step of progressSimulation().
+assert_intervention_rules <- function(DF, rule) {
+  DF <- DF %>%
+    filter(year == max(DF$year)) %>%
+    select_(target = rule[1]) %>%
+    mutate(gsub(rule[2], rule[3], target))
+}
+
 # run the lag updates and the deterministic and probabilistic rules
 progressSimulation <- function(data, lags, rules, models){
     require(dplyr)
