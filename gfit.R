@@ -83,12 +83,21 @@ assert_intervention_rules <- function(DF, rule) {
 }
 
 # run the lag updates and the deterministic and probabilistic rules
-progressSimulation <- function(data, lags, rules, models){
+progressSimulation <- function(data, lags, rules, models, intervention_rules=NULL, natural_DF=NULL, intervention_DF=NULL){
+    ## Start at t=0.
     require(dplyr)
     times <- sort(unique(data$year))
     simDF <- filter(data, year == min(year)) %>%
         mutate(id=1:n())
+    ## We have to assert the intervention rules at t=0 as well as in updating below.
+    if(!is.null(intervention_rules)) {
+      for(r in names(intervention_rules)){
+        simDF[,r] <- intervention_rules[[r]](simDF)
+      }
+    }
+    ## Simulate forward year by year, updating all variables according to provided deterministic/probablistic rules.
     for(y in times[2:length(times)]){
+        ## Progress forward one year and index lagged variables for this step.
         upDF <- simDF %>%
             filter(year == max(year)) %>%
             mutate(year=year+1) %>%
@@ -101,10 +110,62 @@ progressSimulation <- function(data, lags, rules, models){
         }
         upDF <- ungroup(upDF) %>%
             filter(year == max(year))
+        ## Update this time step with rules for this simulation (natural course, intervention course).
         for(r in names(rules)){
             upDF[,r] <- rules[[r]](upDF, models)
         }
+        ## Assert any rules associated with this simulation (used to calculate direct/indirect effects).
+        if(!is.null(intervention_rules)) {
+          for(r in names(intervention_rules)){
+              upDF[,r] <- intervention_rules[[r]](upDF)
+          }
+        }
+        ## Add updated time step to simulated DF.
         simDF <- rbind(simDF, upDF)
     }
     simDF
+}
+
+
+progressSimulation_dev <- function(data, lags, rules, models, intervention_rules=NULL, natural_DF=NULL, intervention_DF=NULL){
+  ## Start at t=0.
+  require(dplyr)
+  times <- sort(unique(data$year))
+  simDF <- filter(data, year == min(year)) %>%
+    mutate(id=1:n())
+  ## We have to assert the intervention rules at t=0 as well as in updating below.
+  if(!is.null(intervention_rules)) {
+    for(r in names(intervention_rules)){
+      simDF[,r] <- intervention_rules[[r]](simDF)
+    }
+  }
+  ## Simulate forward year by year, updating all variables according to provided deterministic/probablistic rules.
+  for(y in times[2:length(times)]){
+    ## Progress forward one year and index lagged variables for this step.
+    upDF <- simDF %>%
+      filter(year == max(year)) %>%
+      mutate(year=year+1) %>%
+      mutate(age=age+1) %>%
+      rbind(simDF) %>%
+      arrange(id, year) %>%
+      group_by(id)
+    for(r in names(lags)){
+      upDF <- lags[[r]](upDF)
+    }
+    upDF <- ungroup(upDF) %>%
+      filter(year == max(year))
+    ## Update this time step with rules for this simulation (natural course, intervention course).
+    for(r in names(rules)){
+      upDF[,r] <- rules[[r]](upDF, natural_DF, intervention_DF, models)
+    }
+    ## Assert any rules associated with this simulation (used to calculate direct/indirect effects).
+    if(!is.null(intervention_rules)) {
+      for(r in names(intervention_rules)){
+        upDF[,r] <- intervention_rules[[r]](upDF)
+      }
+    }
+    ## Add updated time step to simulated DF.
+    simDF <- rbind(simDF, upDF)
+  }
+  simDF
 }

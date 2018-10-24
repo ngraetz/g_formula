@@ -81,11 +81,26 @@ rules <- list(
     totalbirth = function(DF, ...) DF$totalbirth + DF$birth,
     censor = function(DF, models) simPredict(DF, models, 4)
 )
+
 # To calculate direct/indirect effects, we need an intervention to be enforced within the simulated data under the same natural rules. 
 # Let's test replacing any partner='married' with partner='single'; that is, we will be calculating the effect of marriage in our natural course (Maarten's example).
-# Maybe there is a better logic to this, but below we specify each intervention rule to be enforced of the form c(variable, values, replacement)
 intervention_rules <- list(
-  c('partner','married','single') 
+    partner = function(DF) DF %>% select(partner) %>% mutate(partner = replace(partner, partner == 'married', 'single'))
+)
+
+# Lastly, we need a set of rules for each specific effect to be simulated. Below are the rules for simulating the direct effect
+# using the natural and intervention courses. These leverage simScenario(), which draws stochastically from the DF provided. 
+# I need to add the rule set for the indirect effects. I think for whatever you want the effect for you draw from the intervention,
+# and draw from the natural for everything else. The only thing that makes it a "direct" vs. "indirect" effect is whether or not it
+# was the variable actually being intervened on in creating intervention_DF.
+direct_effect_rules <- list(
+  agegroup = function(DF, ...) binAges(DF$age), # Still deterministic.
+  birth = function(DF, natural_DF, intervention_DF, models, ...) simPredict(DF, models, 1), # Still probabilistic based on model.
+  job = function(DF, natural_DF, intervention_DF, models) simScenario(DF, natural_DF, models, 2), # Draw stochastically from natural course.
+  partner = function(DF, natural_DF, intervention_DF, models) simScenario(DF, intervention_DF, models, 3), # Draw stochastically from intervention.
+  totaledu = function(DF, ...) DF$totaledu + (DF$job == "edu"), # Still deterministic.
+  totalbirth = function(DF, ...) DF$totalbirth + DF$birth, # Still deterministic.
+  censor = function(DF, natural_DF, intervention_DF, models, ...) simPredict(DF, models, 4) # Still probabilistic based on model (?).
 )
 
 boots <- 15 # Number of bootstraps, 100 takes a while
@@ -93,7 +108,7 @@ replicationSize <- 6 # Replicate this bootstrap an arbitrary amount of times to 
 
 set.seed(123)
 
-if(!file.exists("./bootruns.Rds")){
+if(!file.exists("./bootruns.Rds")) {
   
     bootruns <- mclapply(1:boots, function(b) {
       
@@ -111,22 +126,29 @@ if(!file.exists("./bootruns.Rds")){
         mcDF <- bind_rows(lapply(1:replicationSize, function(i) sampleDF)) 
         
         # Run the "natural course" rules
-        naturalDF <- progressSimulation(mcDF, lags, rules, gfitboot)
+        natural_DF <- progressSimulation(mcDF, lags, rules, gfitboot)
         
         # Run the "intervention course" rules
-        interventionDF <- progressSimulation(mcDF, lags, rules, gfitboot)
+        intervention_DF <- progressSimulation(mcDF, lags, rules, gfitboot, intervention_rules)
+        
+        # Simulate direct effect drawing stochastically from either the natural or intervention course according to the direct rules 
+        direct_effect_DF <- progressSimulation_dev(mcDF, lags, direct_effect_rules, gfitboot, natural_DF=natural_DF, intervention_DF=intervention_DF)
+        
+        # Simulate indirect effects
+        # [to be added]
         
         # Return all courses simulated
-        list(natural=naturalDF, intervention=interventionDF)
+        list(natural=natural_DF, intervention=intervention_DF, direct=direct_effect_DF)
         
-    }, mc.cores=local_cores)
+    }, mc.cores=1)
     
     saveRDS(bootruns, "./bootruns.Rds")
+    
 }
 
 bootruns <- read_rds("./bootruns.Rds")
 
-pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
+natural_pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
     bootruns[[i]]$natural %>%
         mutate(sim=i)})) %>%
     group_by(age, sim) %>%
@@ -140,7 +162,78 @@ pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
         pmarried = mean(partner == "married"),
         pcohab = mean(partner == "cohab")) %>%
     mutate(pbirths=nbirths/nmoms) %>%
-    select(-nbirths, -nmoms)
+    select(-nbirths, -nmoms) %>%
+    select(-sim) %>%
+      summarise_all(
+        list(
+          mean = mean, 
+          lwr = function(x) quantile(x, probs=.025),
+          upr = function(x) quantile(x, probs=.975))) %>%
+      ungroup %>%
+      gather("Metric", "Value", -age) %>%
+      mutate(measure=gsub("_[A-z ]*", "", Metric)) %>%
+      mutate(statistic=gsub("[A-z ]*_", "", Metric)) %>%
+      select(-Metric) %>%
+      spread("statistic", "Value") %>%
+      mutate(type="Natural")
+
+intervention_pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
+  bootruns[[i]]$intervention %>%
+    mutate(sim=i)})) %>%
+  group_by(age, sim) %>%
+  summarize(
+    nbirths = sum(birth), 
+    nmoms = n(),
+    pedu = mean(job == "edu"),
+    pother = mean(job == "other"),
+    pfull = mean(job == "full"),
+    psingle = mean(partner == "single"),
+    pmarried = mean(partner == "married"),
+    pcohab = mean(partner == "cohab")) %>%
+  mutate(pbirths=nbirths/nmoms) %>%
+  select(-nbirths, -nmoms) %>%
+  select(-sim) %>%
+  summarise_all(
+    list(
+      mean = mean, 
+      lwr = function(x) quantile(x, probs=.025),
+      upr = function(x) quantile(x, probs=.975))) %>%
+  ungroup %>%
+  gather("Metric", "Value", -age) %>%
+  mutate(measure=gsub("_[A-z ]*", "", Metric)) %>%
+  mutate(statistic=gsub("[A-z ]*_", "", Metric)) %>%
+  select(-Metric) %>%
+  spread("statistic", "Value") %>%
+  mutate(type="Intervention")
+
+direct_effect_pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
+  bootruns[[i]]$direct %>%
+    mutate(sim=i)})) %>%
+  group_by(age, sim) %>%
+  summarize(
+    nbirths = sum(birth), 
+    nmoms = n(),
+    pedu = mean(job == "edu"),
+    pother = mean(job == "other"),
+    pfull = mean(job == "full"),
+    psingle = mean(partner == "single"),
+    pmarried = mean(partner == "married"),
+    pcohab = mean(partner == "cohab")) %>%
+  mutate(pbirths=nbirths/nmoms) %>%
+  select(-nbirths, -nmoms) %>%
+  select(-sim) %>%
+  summarise_all(
+    list(
+      mean = mean, 
+      lwr = function(x) quantile(x, probs=.025),
+      upr = function(x) quantile(x, probs=.975))) %>%
+  ungroup %>%
+  gather("Metric", "Value", -age) %>%
+  mutate(measure=gsub("_[A-z ]*", "", Metric)) %>%
+  mutate(statistic=gsub("[A-z ]*_", "", Metric)) %>%
+  select(-Metric) %>%
+  spread("statistic", "Value") %>%
+  mutate(type="Direct effect")
 
 actualDF <- DF %>%
     group_by(age) %>%
@@ -161,64 +254,15 @@ actualDF <- DF %>%
 
 # I dont feel great about these confidence intervals we should talk about this
 # Also this hould be automated
-pSimsDF %>%
-    select(-sim) %>%
-    summarise_all(
-        list(
-            mean = mean, 
-            lwr = function(x) quantile(x, probs=.025),
-            upr = function(x) quantile(x, probs=.975))) %>%
-    ungroup %>%
-    gather("Metric", "Value", -age) %>%
-    mutate(measure=gsub("_[A-z ]*", "", Metric)) %>%
-    mutate(statistic=gsub("[A-z ]*_", "", Metric)) %>%
-    select(-Metric) %>%
-    spread("statistic", "Value") %>%
-    mutate(type="Estimate") %>%
+natural_pSimsDF %>%
+    bind_rows(intervention_pSimsDF) %>%
+    bind_rows(direct_effect_pSimsDF) %>%
     bind_rows(actualDF) %>%
     filter(measure != "pother") %>%
     ggplot(aes(x=age, y=mean, group=type, color=type, fill=type)) +
     geom_line(size=1) +
-    geom_ribbon(aes(ymin=lwr, ymax=upr), alpha=.9) +
+    geom_ribbon(aes(ymin=lwr, ymax=upr), alpha=.5) +
     theme_classic() +
     facet_wrap(~measure)
-
-## ESTIMATING EFFECTS: calculate controlled direct effect (CDE) of education by editing rules list and rerunning.
-## Key change: we need a new rule for when we want to update a variable by pulling from the natural course DF. So this requires
-## having estimated the natural course already. Instead of simPredict(), we use simScenario() for everything except the outcome. We still 
-## simulate probabilistically the outcome (and the censoring...?). 
-##    simScenario() = draw stochastically from the natural course distribution (or intervention distribution) of the variable at time t.
-##
-## Notes: I'm confused now though... maybe we always need a reference scenario DF to compare to the natural course DF. Like Maarten intervenes on 
-## partner in the input DF, simulates a new scenario DF, and then calculates effects by simulating and drawing from the intervention scenario
-## for partner and drawing natural course for job. Soooo I guess if you want to know the effect of a variable, you need to frame it as the effect
-## of some difference (like having college education instead of high school) so that you have a reference set. So I guess our two rules would be:
-##    simPredict() = used to update all probabilistic things in the natural course (or any scenario where we edit the input DF).
-##    simScenario() = used to update all probabilitic things in effect calculations by drawing stochastically from the target variable distribution 
-##                    at time t for whatever DF you give it.
-##
-## So I thiiiiink the way we want to do this is always hand all rules the DF to update, the natural course DF, and the intervention DF. And then
-## in the function the rule uses to actually update values, we manipulate which DF it should use based on what direct/indirect effect we are
-## estimating.
-rules <- list(
-  agegroup = function(DF, ...) binAges(DF$age), # Still deterministic.
-  birth = function(DF, natural_DF, intervention_DF, models, ...) simPredict(DF, models, 1), # Still probabilistic based on model.
-  job = function(DF, natural_DF, intervention_DF, models) simScenario(DF, natural_DF, models, 2), # Draw stochastically from natural course.
-  partner = function(DF, natural_DF, intervention_DF, models) simScenario(DF, intervention_DF, models, 3), # Draw stochastically from intervention.
-  totaledu = function(DF, ...) DF$totaledu + (DF$job == "edu"), # Still deterministic.
-  totalbirth = function(DF, ...) DF$totalbirth + DF$birth, # Still deterministic.
-  censor = function(DF, natural_DF, intervention_DF, models, ...) simPredict(DF, models, 4) # Still probabilistic based on model (?).
-)
-
-# 1. "now let's create a counterfactual dataset for the TOTAL EFFECT
-# where we intervene on the data in some way
-# we will not allow marriage: we make these people single instead." - Maarten
-## INTERVENTION RULES: marriage=0, single=1
-
-# 2. "now let's create a counterfactual dataset for the NATURAL DIRECT EFFECT
-# to achieve this, the mediator distribution must be taken from the intervention scenario
-# and the exposure from the natural course." - Maarten
-## Nick: I think his comment is wrong above, we want to take the mediators from the intervention and the exposure from the intervention.
-## (you're removing all the indirect pathways beyond marriage through which the intervention operates on births).
 
 
