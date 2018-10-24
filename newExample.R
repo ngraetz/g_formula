@@ -74,12 +74,12 @@ lags <- list(
 # Here are the natural deterministic and probabilistic rules.
 rules <- list(
     agegroup = function(DF, ...) binAges(DF$age),
-    birth = function(DF, models) simPredict(DF, models, 1),
-    job = function(DF, models) simPredict(DF, models, 2),
-    partner = function(DF, models) simPredict(DF, models, 3),
+    birth = function(DF, models, ...) simPredict(DF, models, 1),
+    job = function(DF, models, ...) simPredict(DF, models, 2),
+    partner = function(DF, models, ...) simPredict(DF, models, 3),
     totaledu = function(DF, ...) DF$totaledu + (DF$job == "edu"),
     totalbirth = function(DF, ...) DF$totalbirth + DF$birth,
-    censor = function(DF, models) simPredict(DF, models, 4)
+    censor = function(DF, models, ...) simPredict(DF, models, 4)
 )
 
 # To calculate direct/indirect effects, we need an intervention to be enforced within the simulated data under the same natural rules. 
@@ -92,15 +92,17 @@ intervention_rules <- list(
 # using the natural and intervention courses. These leverage simScenario(), which draws stochastically from the DF provided. 
 # I need to add the rule set for the indirect effects. I think for whatever you want the effect for you draw from the intervention,
 # and draw from the natural for everything else. The only thing that makes it a "direct" vs. "indirect" effect is whether or not it
-# was the variable actually being intervened on in creating intervention_DF.
+# was the variable actually being intervened on in creating intervention_DF. I think we could automate this to create
+# a set of rules for each indirect effect implied by all the variables in the models, and automatically add a simulation step for
+# each to the bootruns mclapply() below. I think even with a lot of variable this wouldn't add a ton of run time.
 direct_effect_rules <- list(
   agegroup = function(DF, ...) binAges(DF$age), # Still deterministic.
-  birth = function(DF, natural_DF, intervention_DF, models, ...) simPredict(DF, models, 1), # Still probabilistic based on model.
-  job = function(DF, natural_DF, intervention_DF, models) simScenario(DF, natural_DF, models, 2), # Draw stochastically from natural course.
-  partner = function(DF, natural_DF, intervention_DF, models) simScenario(DF, intervention_DF, models, 3), # Draw stochastically from intervention.
+  birth = function(DF, models, ...) simPredict(DF, models, 1), # Still probabilistic based on model.
+  job = function(DF, models, natural_DF, intervention_DF) simScenario(DF, natural_DF, models, 2), # Draw stochastically from natural course.
+  partner = function(DF, models, natural_DF, intervention_DF) simScenario(DF, intervention_DF, models, 3), # Draw stochastically from intervention.
   totaledu = function(DF, ...) DF$totaledu + (DF$job == "edu"), # Still deterministic.
   totalbirth = function(DF, ...) DF$totalbirth + DF$birth, # Still deterministic.
-  censor = function(DF, natural_DF, intervention_DF, models, ...) simPredict(DF, models, 4) # Still probabilistic based on model (?).
+  censor = function(DF, models, ...) simPredict(DF, models, 4) # Still probabilistic based on model (?).
 )
 
 boots <- 15 # Number of bootstraps, 100 takes a while
@@ -132,15 +134,15 @@ if(!file.exists("./bootruns.Rds")) {
         intervention_DF <- progressSimulation(mcDF, lags, rules, gfitboot, intervention_rules)
         
         # Simulate direct effect drawing stochastically from either the natural or intervention course according to the direct rules 
-        direct_effect_DF <- progressSimulation_dev(mcDF, lags, direct_effect_rules, gfitboot, natural_DF=natural_DF, intervention_DF=intervention_DF)
+        direct_effect_DF <- progressSimulation(mcDF, lags, direct_effect_rules, gfitboot, natural_DF=natural_DF, intervention_DF=intervention_DF)
         
-        # Simulate indirect effects
-        # [to be added]
+        # Simulate indirect effects [not tested]
+        # indirect_job_effect_DF <- progressSimulation(mcDF, lags, indirect_job_effect_rules, gfitboot, natural_DF=natural_DF, intervention_DF=intervention_DF)
         
         # Return all courses simulated
         list(natural=natural_DF, intervention=intervention_DF, direct=direct_effect_DF)
         
-    }, mc.cores=1)
+    }, mc.cores=local_cores)
     
     saveRDS(bootruns, "./bootruns.Rds")
     
@@ -148,6 +150,7 @@ if(!file.exists("./bootruns.Rds")) {
 
 bootruns <- read_rds("./bootruns.Rds")
 
+## We gotta clean this up to all use some general function for summarizing DFs out of the simulation.
 natural_pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
     bootruns[[i]]$natural %>%
         mutate(sim=i)})) %>%
@@ -253,7 +256,7 @@ actualDF <- DF %>%
 
 
 # I dont feel great about these confidence intervals we should talk about this
-# Also this hould be automated
+# Also this should be automated
 natural_pSimsDF %>%
     bind_rows(intervention_pSimsDF) %>%
     bind_rows(direct_effect_pSimsDF) %>%
@@ -265,4 +268,11 @@ natural_pSimsDF %>%
     theme_classic() +
     facet_wrap(~measure)
 
-
+## Notes: we should talk about how to interpret the direct/indirect effects implied by the simulations. I'm not totally sure, but I think Maarten is wrong
+## in his example code to just subtract the direct effect (in terms of number of babies) from the intervention course to get the total babies associated with
+## the "indirect effect" through job. In his example, maybe it works because there are only two things the intervention course difference could come from: the direct
+## effect of partner intervention, or the indirect effect of partner intervention through job. But it seems to me that it's plausible for the direct and indirect
+## effects to work in opposite directions. All the +/- predictions will add up to the intervention prediction on the outcome. I think it might just become hard to read
+## if we put a ton of lines on the graph above for each indirect effect (thinking ahead to visualizing and making sense of all the results). I think a stacked bar on
+## the outcome at each age, where you have +/- bars for each effect that all add up to a black dot in the middle which is the intervention prediction, might be the move.
+## I can start playing around with stuff, curious what you think.
