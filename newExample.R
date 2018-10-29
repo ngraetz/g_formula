@@ -1,5 +1,14 @@
 rm(list=ls())
 
+## To-do list
+## 1. Clean this whole thing up to remove all hardcoding around Maarten's data. Base off a config file with these inputs:
+##    - Dataset long on "id", "age", "year"
+##    - List of models/families for simulating natural course
+##    - List of natural rules
+##    - List of intervention rules
+##    - List of variables for effect calculations (rule sets for calculating each can be generated automatically
+##      based on what variables are updated probabilistically in the natural rules)
+
 ## Options needed for this run.
 repo <- 'C:/Users/Nick/Documents/repos/g_formula/'
 local_cores <- 4
@@ -11,7 +20,7 @@ library(nnet)
 library(parallel)
 source("./gfit.R")
 
-binAges <- function(x){
+binAges <- function(x) {
     cut(
         x, 
         breaks = c(15, 22, 29, Inf), 
