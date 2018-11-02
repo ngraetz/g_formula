@@ -38,8 +38,9 @@ simPredict <- function(DF, model_list, model_index){
         opts <- colnames(probs)
         sim <- apply(probs, 1, function(p) sample(opts, 1, prob=p))
     }
-    else{
-        sim <- rbinom(nrow(DF), 1, predict(model_, newdata=DF, type="response"))
+    if(class(model_)[1] == "glm"){
+        if(model_$family$family == 'binomial') sim <- rbinom(nrow(DF), 1, predict(model_, newdata=DF, type="response"))
+        if(model_$family$family == 'gaussian') sim <- predict(model_, newdata=DF)
     }
     sim
 }
