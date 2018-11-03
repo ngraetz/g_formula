@@ -326,8 +326,7 @@ actualDF <- DF %>%
   gather("measure", "mean", -age) %>%
   mutate(type="Observed")
 
-# I dont feel great about these confidence intervals we should talk about this
-# Also this should be automated
+# Put ages that aren't actually sequential back to their original observed values. 
 redo_ages <- function(df) {
 new_df <- as.data.table(df)
 new_df[age==1, new_age := 0]
@@ -343,7 +342,7 @@ intervention_pSimsDF <- redo_ages(intervention_pSimsDF)
 direct_effect_pSimsDF <- redo_ages(direct_effect_pSimsDF)
 actualDF <- redo_ages(actualDF)
 
-## Plots 
+## Plots
 natural_pSimsDF %>%
   bind_rows(intervention_pSimsDF) %>%
   bind_rows(direct_effect_pSimsDF) %>%
