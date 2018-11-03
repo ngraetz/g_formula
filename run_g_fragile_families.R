@@ -138,8 +138,8 @@ set.seed(123)
       select(id) %>%
       unique %>%
       sample_frac(replace=TRUE) %>%
-      right_join(DF)
-    
+      left_join(DF)
+
     # Fit the model
     gfitboot <- gfit.init(formulas, families, functions, data=sampleDF)
     
@@ -164,18 +164,11 @@ set.seed(123)
     
   }, mc.cores=local_cores)
   
-  saveRDS(bootruns, "./ff_bootruns_incarceration_effects.Rds")
+  #saveRDS(bootruns, "./ff_bootruns_incarceration_effects.Rds")
   
 #}
 
 #bootruns <- read_rds("./bootruns.Rds")
-
-recodeAges <- function(x) {
-  cut(
-    x, 
-    breaks = c(1,2,3,4,5), 
-    labels = c(0,1,3,5,9))
-}
 
 natural_pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
   bootruns[[i]]$natural %>%
@@ -219,6 +212,90 @@ natural_pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
   spread("statistic", "Value") %>%
   mutate(type="Natural")
 
+intervention_pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
+  bootruns[[i]]$intervention %>%
+    mutate(sim=i)})) %>%
+  group_by(age, sim) %>%
+  summarize(
+    mppvt = mean(c_ppvt), 
+    pcohab = mean(m_relation == "cohab"),
+    pmarried = mean(m_relation == "married"),
+    pnocontact = mean(m_relation == "no_contact"),
+    pcontact = mean(m_relation == "contact"),
+    mkids = mean(m_kids), 
+    pexcellenthealth = mean(m_health == "Excellent"),
+    ppoorhealth = mean(m_health == "Poor"),
+    pcollege = mean(m_edu == "college"),
+    psomecollege = mean(m_edu == "some_college"),
+    phs = mean(m_edu == "hs"),
+    plesshs = mean(m_edu == "less_hs"),
+    phighincome = mean(m_poverty == "perc_300_plus"),
+    ppov = mean(m_poverty == "perc_50_99"),
+    pextpov = mean(m_poverty == "perc_0_49"),
+    pfatherjail = mean(m_f_in_jail), 
+    pevicted = mean(m_evicted), 
+    pmotheranxiety = mean(m_anxiety), 
+    pmotherdepression = mean(m_depression), 
+    pfulltime = mean(m_job_type == "full_time"),
+    punemployed = mean(m_job_type == "unemployed"),
+    pparttime = mean(m_job_type == "part_time")
+  ) %>%
+  select(-sim) %>%
+  summarise_all(
+    list(
+      mean = mean, 
+      lwr = function(x) quantile(x, probs=.025),
+      upr = function(x) quantile(x, probs=.975))) %>%
+  ungroup %>%
+  gather("Metric", "Value", -age) %>%
+  mutate(measure=gsub("_[A-z ]*", "", Metric)) %>%
+  mutate(statistic=gsub("[A-z ]*_", "", Metric)) %>%
+  select(-Metric) %>%
+  spread("statistic", "Value") %>%
+  mutate(type="Intervention")
+
+direct_effect_pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
+  bootruns[[i]]$direct %>%
+    mutate(sim=i)})) %>%
+  group_by(age, sim) %>%
+  summarize(
+    mppvt = mean(c_ppvt), 
+    pcohab = mean(m_relation == "cohab"),
+    pmarried = mean(m_relation == "married"),
+    pnocontact = mean(m_relation == "no_contact"),
+    pcontact = mean(m_relation == "contact"),
+    mkids = mean(m_kids), 
+    pexcellenthealth = mean(m_health == "Excellent"),
+    ppoorhealth = mean(m_health == "Poor"),
+    pcollege = mean(m_edu == "college"),
+    psomecollege = mean(m_edu == "some_college"),
+    phs = mean(m_edu == "hs"),
+    plesshs = mean(m_edu == "less_hs"),
+    phighincome = mean(m_poverty == "perc_300_plus"),
+    ppov = mean(m_poverty == "perc_50_99"),
+    pextpov = mean(m_poverty == "perc_0_49"),
+    pfatherjail = mean(m_f_in_jail), 
+    pevicted = mean(m_evicted), 
+    pmotheranxiety = mean(m_anxiety), 
+    pmotherdepression = mean(m_depression), 
+    pfulltime = mean(m_job_type == "full_time"),
+    punemployed = mean(m_job_type == "unemployed"),
+    pparttime = mean(m_job_type == "part_time")
+  ) %>%
+  select(-sim) %>%
+  summarise_all(
+    list(
+      mean = mean, 
+      lwr = function(x) quantile(x, probs=.025),
+      upr = function(x) quantile(x, probs=.975))) %>%
+  ungroup %>%
+  gather("Metric", "Value", -age) %>%
+  mutate(measure=gsub("_[A-z ]*", "", Metric)) %>%
+  mutate(statistic=gsub("[A-z ]*_", "", Metric)) %>%
+  select(-Metric) %>%
+  spread("statistic", "Value") %>%
+  mutate(type="Direct effect")
+
 actualDF <- DF %>%
   group_by(age) %>%
   summarize(
@@ -250,24 +327,24 @@ actualDF <- DF %>%
 
 # I dont feel great about these confidence intervals we should talk about this
 # Also this should be automated
-actualDF <- as.data.table(actualDF)
-actualDF[age==1, new_age := 0]
-actualDF[age==2, new_age := 1]
-actualDF[age==3, new_age := 3]
-actualDF[age==4, new_age := 5]
-actualDF[age==5, new_age := 9]
-actualDF[, age := new_age]
-natural_pSimsDF <- as.data.table(natural_pSimsDF)
-natural_pSimsDF[age==1, new_age := 0]
-natural_pSimsDF[age==2, new_age := 1]
-natural_pSimsDF[age==3, new_age := 3]
-natural_pSimsDF[age==4, new_age := 5]
-natural_pSimsDF[age==5, new_age := 9]
-natural_pSimsDF[, age := new_age]
+redo_ages <- function(df) {
+new_df <- as.data.table(df)
+new_df[age==1, new_age := 0]
+new_df[age==2, new_age := 1]
+new_df[age==3, new_age := 3]
+new_df[age==4, new_age := 5]
+new_df[age==5, new_age := 9]
+new_df[, age := new_age]
+return(new_df)
+}
+natural_pSimsDF <- redo_ages(natural_pSimsDF)
+intervention_pSimsDF <- redo_ages(intervention_pSimsDF)
+direct_effect_pSimsDF <- redo_ages(direct_effect_pSimsDF)
+actualDF <- redo_ages(actualDF)
 
 natural_pSimsDF %>%
-  #bind_rows(intervention_pSimsDF) %>%
-  #bind_rows(direct_effect_pSimsDF) %>%
+  bind_rows(intervention_pSimsDF) %>%
+  bind_rows(direct_effect_pSimsDF) %>%
   bind_rows(actualDF) %>%
   filter(!(measure %in% c('mkids',"mppvt"))) %>%
   ggplot(aes(x=age, y=mean, group=type, color=type, fill=type)) +
@@ -277,8 +354,8 @@ natural_pSimsDF %>%
   facet_wrap(~measure)
 
 natural_pSimsDF %>%
-  #bind_rows(intervention_pSimsDF) %>%
-  #bind_rows(direct_effect_pSimsDF) %>%
+  bind_rows(intervention_pSimsDF) %>%
+  bind_rows(direct_effect_pSimsDF) %>%
   bind_rows(actualDF) %>%
   filter(measure %in% c("mppvt")) %>%
   ggplot(aes(x=age, y=mean, group=type, color=type, fill=type)) +
