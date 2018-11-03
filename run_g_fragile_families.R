@@ -126,6 +126,8 @@ direct_effect_rules <- list(
 
 boots <- 15 # Number of bootstraps, 100 takes a while
 replicationSize <- 5 # Replicate this bootstrap an arbitrary amount of times to reduce Monte Carlo error (would need to show this converges)
+# maxit=1000 (might need to increase max iterations on multinomial models, I think most are just stopping at 100 because it is the default,
+# not because they converge)
 
 set.seed(80085)
 
@@ -147,21 +149,20 @@ set.seed(80085)
     mcDF <- bind_rows(lapply(1:replicationSize, function(i) sampleDF)) 
     
     # Run the "natural course" rules
-    natural_DF <- progressSimulation(mcDF, lags, rules, gfitboot)
+    natural_course_DF <- progressSimulation(mcDF, lags, rules, gfitboot)
     
     # Run the "intervention course" rules
     intervention_DF <- progressSimulation(mcDF, lags, rules, gfitboot, intervention_rules)
     
     # Simulate direct effect drawing stochastically from either the natural or intervention course according to the direct rules 
-    direct_effect_DF <- progressSimulation(mcDF, lags, direct_effect_rules, gfitboot, natural_DF=natural_DF, intervention_DF=intervention_DF)
+    direct_effect_DF <- progressSimulation(mcDF, lags, direct_effect_rules, gfitboot, natural_DF=natural_course_DF, intervention_DF=intervention_DF)
     
     # Simulate indirect effects [not tested]
     # indirect_job_effect_DF <- progressSimulation(mcDF, lags, indirect_job_effect_rules, gfitboot, natural_DF=natural_DF, intervention_DF=intervention_DF)
     
     # Return all courses simulated
-    bootruns <- list(list(natural=natural_DF, intervention=intervention_DF, direct=direct_effect_DF))
-    #list(natural=natural_DF)
-    
+    list(natural=natural_DF, intervention=intervention_DF, direct=direct_effect_DF)
+
   }, mc.cores=local_cores)
   
   saveRDS(bootruns, "./ff_bootruns_poverty_effects.Rds")
@@ -342,6 +343,7 @@ intervention_pSimsDF <- redo_ages(intervention_pSimsDF)
 direct_effect_pSimsDF <- redo_ages(direct_effect_pSimsDF)
 actualDF <- redo_ages(actualDF)
 
+## Plots 
 natural_pSimsDF %>%
   bind_rows(intervention_pSimsDF) %>%
   bind_rows(direct_effect_pSimsDF) %>%
