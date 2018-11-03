@@ -65,13 +65,26 @@ simScenario <- function(DF, course_DF, model_list, model_index){
     opts <- colnames(probs)
     sim <- apply(probs, 1, function(p) sample(opts, 1, prob=p))
   }
-  else{
-    course_prob <- course_DF %>% 
+  if(class(model_)[1] == "glm"){
+    if(model_$family$family == 'binomial') {
+      course_prob <- course_DF %>% 
       filter(year == max(DF$year)) %>%
       select_(target = target_var_name) %>%
       summarise(mean(target, na.rm=T))
-    probs <- rep(as.numeric(course_prob), nrow(DF))
-    sim <- rbinom(nrow(DF), 1, probs)
+      probs <- rep(as.numeric(course_prob), nrow(DF))
+      sim <- rbinom(nrow(DF), 1, probs)
+    }
+    if(model_$family$family == 'gaussian') {
+      course_mean <- course_DF %>% 
+        filter(year == max(DF$year)) %>%
+        select_(target = target_var_name) %>%
+        summarise(mean(target, na.rm=T))
+      course_sd <- course_DF %>% 
+        filter(year == max(DF$year)) %>%
+        select_(target = target_var_name) %>%
+        summarise(sd(target, na.rm=T))
+      sim <- rnorm(nrow(DF), mean = as.numeric(course_mean), sd = as.numeric(course_sd))
+    }
   }
   sim
 }

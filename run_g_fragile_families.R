@@ -92,10 +92,10 @@ rules <- list(
 )
 
 # To calculate direct/indirect effects, we need an intervention to be enforced within the simulated data under the same natural rules. 
-# Let's test replacing any partner='married' with partner='single'; that is, we will be calculating the effect of marriage in our natural course (Maarten's example).
-# intervention_rules <- list(
-#   partner = function(DF) DF %>% select(partner) %>% mutate(partner = replace(partner, partner == 'married', 'single'))
-# )
+# Let's test no incarceration of fathers
+intervention_rules <- list(
+  m_f_in_jail = function(DF) DF %>% select(m_f_in_jail) %>% mutate(m_f_in_jail = replace(m_f_in_jail, m_f_in_jail == 1, 0))
+)
 
 # Lastly, we need a set of rules for each specific effect to be simulated. Below are the rules for simulating the direct effect
 # using the natural and intervention courses. These leverage simScenario(), which draws stochastically from the DF provided. 
@@ -104,22 +104,32 @@ rules <- list(
 # was the variable actually being intervened on in creating intervention_DF. I think we could automate this to create
 # a set of rules for each indirect effect implied by all the variables in the models, and automatically add a simulation step for
 # each to the bootruns mclapply() below. I think even with a lot of variable this wouldn't add a ton of run time.
-# direct_effect_rules <- list(
-#   agegroup = function(DF, ...) binAges(DF$age), # Still deterministic.
-#   birth = function(DF, models, ...) simPredict(DF, models, 1), # Still probabilistic based on model.
-#   job = function(DF, models, natural_DF, intervention_DF) simScenario(DF, natural_DF, models, 2), # Draw stochastically from natural course.
-#   partner = function(DF, models, natural_DF, intervention_DF) simScenario(DF, intervention_DF, models, 3), # Draw stochastically from intervention.
-#   totaledu = function(DF, ...) DF$totaledu + (DF$job == "edu"), # Still deterministic.
-#   totalbirth = function(DF, ...) DF$totalbirth + DF$birth, # Still deterministic.
-#   censor = function(DF, models, ...) simPredict(DF, models, 4) # Still probabilistic based on model (?).
-# )
+direct_effect_rules <- list(
+  ## DV of interest
+  c_ppvt = function(DF, models, ...) simPredict(DF, models, 1),
+  ## Indirect pathways
+  m_relation = function(DF, models, ...) simScenario(DF, natural_DF, models, 2),
+  m_kids = function(DF, models, ...) simScenario(DF, natural_DF, models, 3),
+  m_health = function(DF, models, ...) simScenario(DF, natural_DF, models, 4),
+  m_edu = function(DF, models, ...) simScenario(DF, natural_DF, models, 5),
+  m_poverty = function(DF, models, ...) simScenario(DF, natural_DF, models, 6),
+  ## Direct pathway
+  m_f_in_jail = function(DF, models, ...) simScenario(DF, intervention_DF, models, 7),
+  ## Indirect pathways
+  m_evicted = function(DF, models, ...) simScenario(DF, natural_DF, models, 8),
+  m_anxiety = function(DF, models, ...) simScenario(DF, natural_DF, models, 9),
+  m_depression = function(DF, models, ...) simScenario(DF, natural_DF, models, 10),
+  m_job_type = function(DF, models, ...) simScenario(DF, natural_DF, models, 11),
+  ## Censoring 
+  censor = function(DF, models, ...) simPredict(DF, models, 12)
+)
 
 boots <- 15 # Number of bootstraps, 100 takes a while
 replicationSize <- 6 # Replicate this bootstrap an arbitrary amount of times to reduce Monte Carlo error (would need to show this converges)
 
 set.seed(123)
 
-if(!file.exists("./ff_bootruns.Rds")) {
+#if(!file.exists("./ff_bootruns.Rds")) {
   
   bootruns <- mclapply(1:boots, function(b) {
     
@@ -140,25 +150,25 @@ if(!file.exists("./ff_bootruns.Rds")) {
     natural_DF <- progressSimulation(mcDF, lags, rules, gfitboot)
     
     # Run the "intervention course" rules
-    #intervention_DF <- progressSimulation(mcDF, lags, rules, gfitboot, intervention_rules)
+    intervention_DF <- progressSimulation(mcDF, lags, rules, gfitboot, intervention_rules)
     
     # Simulate direct effect drawing stochastically from either the natural or intervention course according to the direct rules 
-    #direct_effect_DF <- progressSimulation(mcDF, lags, direct_effect_rules, gfitboot, natural_DF=natural_DF, intervention_DF=intervention_DF)
+    direct_effect_DF <- progressSimulation(mcDF, lags, direct_effect_rules, gfitboot, natural_DF=natural_DF, intervention_DF=intervention_DF)
     
     # Simulate indirect effects [not tested]
     # indirect_job_effect_DF <- progressSimulation(mcDF, lags, indirect_job_effect_rules, gfitboot, natural_DF=natural_DF, intervention_DF=intervention_DF)
     
     # Return all courses simulated
-    #list(natural=natural_DF, intervention=intervention_DF, direct=direct_effect_DF)
-    list(natural=natural_DF)
+    list(natural=natural_DF, intervention=intervention_DF, direct=direct_effect_DF)
+    #list(natural=natural_DF)
     
   }, mc.cores=local_cores)
   
-  saveRDS(bootruns, "./ff_bootruns.Rds")
+  saveRDS(bootruns, "./ff_bootruns_incarceration_effects.Rds")
   
-}
+#}
 
-bootruns <- read_rds("./bootruns.Rds")
+#bootruns <- read_rds("./bootruns.Rds")
 
 recodeAges <- function(x) {
   cut(
@@ -178,8 +188,8 @@ natural_pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
     pnocontact = mean(m_relation == "no_contact"),
     pcontact = mean(m_relation == "contact"),
     mkids = mean(m_kids), 
-    pexcellent_health = mean(m_health == "Excellent"),
-    ppoor_health = mean(m_health == "Poor"),
+    pexcellenthealth = mean(m_health == "Excellent"),
+    ppoorhealth = mean(m_health == "Poor"),
     pcollege = mean(m_edu == "college"),
     psomecollege = mean(m_edu == "some_college"),
     phs = mean(m_edu == "hs"),
@@ -218,8 +228,8 @@ actualDF <- DF %>%
     pnocontact = mean(m_relation == "no_contact"),
     pcontact = mean(m_relation == "contact"),
     mkids = mean(m_kids), 
-    pexcellent_health = mean(m_health == "Excellent"),
-    ppoor_health = mean(m_health == "Poor"),
+    pexcellenthealth = mean(m_health == "Excellent"),
+    ppoorhealth = mean(m_health == "Poor"),
     pcollege = mean(m_edu == "college"),
     psomecollege = mean(m_edu == "some_college"),
     phs = mean(m_edu == "hs"),
