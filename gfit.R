@@ -110,6 +110,26 @@ progressSimulation <- function(data, lags, rules, models, intervention_rules=NUL
       simDF[,r] <- intervention_rules[[r]](simDF)
     }
   }
+  ## If we are running scenarios (we are passing an already-simulated natural course DF to draw from), we have to apply the scenario rules at t=0.
+  ## NOTE: we can't predict at t=0, and I'm currently predicting the DV of interest and censoring in all scenarios. Does it make sense to draw both
+  ## of these from the intervention course distribution at t=0? Right now the only difference between natural course and intervention course at t=0
+  ## is in the variable we intervene on... 
+  if(!is.null(natural_DF)) {
+    for(r in names(rules)){
+      if(!grepl('simPredict', deparse(rules[[r]])[2])) {
+        simDF[,r] <- rules[[r]](simDF, models, natural_DF, intervention_DF)
+      }
+      if(grepl('simPredict', deparse(rules[[r]])[2])) { # If it is something that needs to be predicted, instead draw from natural at t=0.
+        new_rule <- deparse(rules[[r]])
+        new_rule[2] <- gsub('models', 'natural_DF, models', new_rule[2])
+        new_rule <- paste(new_rule, collapse = '')
+        new_rule <- gsub('simPredict', 'simScenario', new_rule)
+        new_rule <- gsub('function ', 'function', new_rule)
+        new_rule <- eval(parse(text=new_rule))
+        simDF[,r] <- new_rule(simDF, models, natural_DF, intervention_DF)
+      }
+    }
+  }  
   ## Simulate forward year by year, updating all variables according to provided deterministic/probablistic rules.
   for(y in times[2:length(times)]){
     ## Progress forward one year and index lagged variables for this step.

@@ -92,9 +92,9 @@ rules <- list(
 )
 
 # To calculate direct/indirect effects, we need an intervention to be enforced within the simulated data under the same natural rules. 
-# Let's test no incarceration of fathers
+# Let's test no HH poverty 
 intervention_rules <- list(
-  m_f_in_jail = function(DF) DF %>% select(m_f_in_jail) %>% mutate(m_f_in_jail = replace(m_f_in_jail, m_f_in_jail == 1, 0))
+  m_poverty = function(DF) DF %>% select(m_poverty) %>% mutate(m_poverty = replace(m_poverty, m_poverty %in% c("perc_0_49","perc_50_99"), "perc_100_199"))
 )
 
 # Lastly, we need a set of rules for each specific effect to be simulated. Below are the rules for simulating the direct effect
@@ -112,10 +112,10 @@ direct_effect_rules <- list(
   m_kids = function(DF, models, ...) simScenario(DF, natural_DF, models, 3),
   m_health = function(DF, models, ...) simScenario(DF, natural_DF, models, 4),
   m_edu = function(DF, models, ...) simScenario(DF, natural_DF, models, 5),
-  m_poverty = function(DF, models, ...) simScenario(DF, natural_DF, models, 6),
   ## Direct pathway
-  m_f_in_jail = function(DF, models, ...) simScenario(DF, intervention_DF, models, 7),
+  m_poverty = function(DF, models, ...) simScenario(DF, intervention_DF, models, 6),
   ## Indirect pathways
+  m_f_in_jail = function(DF, models, ...) simScenario(DF, natural_DF, models, 7),
   m_evicted = function(DF, models, ...) simScenario(DF, natural_DF, models, 8),
   m_anxiety = function(DF, models, ...) simScenario(DF, natural_DF, models, 9),
   m_depression = function(DF, models, ...) simScenario(DF, natural_DF, models, 10),
@@ -125,9 +125,9 @@ direct_effect_rules <- list(
 )
 
 boots <- 15 # Number of bootstraps, 100 takes a while
-replicationSize <- 6 # Replicate this bootstrap an arbitrary amount of times to reduce Monte Carlo error (would need to show this converges)
+replicationSize <- 5 # Replicate this bootstrap an arbitrary amount of times to reduce Monte Carlo error (would need to show this converges)
 
-set.seed(123)
+set.seed(80085)
 
 #if(!file.exists("./ff_bootruns.Rds")) {
   
@@ -159,15 +159,15 @@ set.seed(123)
     # indirect_job_effect_DF <- progressSimulation(mcDF, lags, indirect_job_effect_rules, gfitboot, natural_DF=natural_DF, intervention_DF=intervention_DF)
     
     # Return all courses simulated
-    list(natural=natural_DF, intervention=intervention_DF, direct=direct_effect_DF)
+    bootruns <- list(list(natural=natural_DF, intervention=intervention_DF, direct=direct_effect_DF))
     #list(natural=natural_DF)
     
   }, mc.cores=local_cores)
   
-  #saveRDS(bootruns, "./ff_bootruns_incarceration_effects.Rds")
+  saveRDS(bootruns, "./ff_bootruns_poverty_effects.Rds")
   
 #}
-
+  
 #bootruns <- read_rds("./bootruns.Rds")
 
 natural_pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
