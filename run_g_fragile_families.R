@@ -1,19 +1,44 @@
 rm(list=ls())
 
+# real_data %>%
+#   multiple_imputation() %>%
+#   replicate_survey_weights() %>%
+#   g_formula() %>%
+#     fit_survey_glms %>%
+#     pull_vcov %>%
+#     bootstrap %>%
+#   visual()
+  
 ## Options needed for this run.
 repo <- 'C:/Users/ngraetz/Documents/repos/g_formula/'
 local_cores <- 1
+use_image <- FALSE
+image_path <- ''
 
 ## Set up packages and functions.
+if(!use_image) {
 setwd(repo)
+library(session)
 library(data.table)
 library(tidyverse)
 library(nnet)
 library(parallel)
+library(ggplot2)
+library(haven)
+library(naniar)
+library(mice)
+library(survey)
 source("./gfit.R")
 
 ## Load dat clean imputed datur.
 DF <- readRDS('./fragile_families_clean.RDS')
+
+## Save image to use on secure remote server (not connected to internet)
+save.image(paste0(repo, 'computing_image.RData'))
+}
+if(use_image) {
+  load(paste0(repo, 'computing_image.RData'))
+}
 
 ## COME BACK TO THIS: for now, override irregularly spaced age/year to be equal (1-5), and the put it back at the end. I don't know how to handle this.
 DF[, age := wave]
@@ -120,7 +145,7 @@ direct_effect_rules <- list(
   m_anxiety = function(DF, models, ...) simScenario(DF, natural_DF, models, 9),
   m_depression = function(DF, models, ...) simScenario(DF, natural_DF, models, 10),
   m_job_type = function(DF, models, ...) simScenario(DF, natural_DF, models, 11),
-  ## Censoring 
+  ## Censoring
   censor = function(DF, models, ...) simPredict(DF, models, 12)
 )
 
@@ -169,7 +194,7 @@ set.seed(80085)
   
 #}
   
-#bootruns <- read_rds("./bootruns.Rds")
+bootruns <- read_rds("./bootruns.Rds")
 
 natural_pSimsDF <- bind_rows(lapply(1:length(bootruns), function(i){
   bootruns[[i]]$natural %>%
