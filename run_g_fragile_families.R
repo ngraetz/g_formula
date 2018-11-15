@@ -10,14 +10,12 @@ rm(list=ls())
 #   visual()
   
 ## Options needed for this run.
-repo <- 'C:/Users/ngraetz/Documents/repos/g_formula/'
 local_cores <- 1
 use_image <- FALSE
 image_path <- ''
 
 ## Set up packages and functions.
 if(!use_image) {
-setwd(repo)
 library(session)
 library(data.table)
 library(tidyverse)

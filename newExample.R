@@ -10,11 +10,9 @@ rm(list=ls())
 ##      based on what variables are updated probabilistically in the natural rules)
 
 ## Options needed for this run.
-repo <- 'C:/Users/Nick/Documents/repos/g_formula/'
 local_cores <- 4
 
 ## Set up packages and functions.
-setwd(repo)
 library(tidyverse)
 library(nnet)
 library(parallel)
