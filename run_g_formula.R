@@ -5,10 +5,8 @@ set.seed(80085)
 ## 1. Be able to run on outcomes that aren't observed over the whole period.
 
 ## Options needed for this run.
-repo <- 'C:/Users/Nick/Documents/repos/g_formula/'
 
 ## Set up packages and functions.
-setwd(repo)
 library(tidyverse)
 library(nnet)
 library(parallel)

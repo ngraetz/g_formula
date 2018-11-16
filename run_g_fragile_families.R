@@ -10,14 +10,12 @@ rm(list=ls())
 #   visual()
   
 ## Options needed for this run.
-repo <- 'C:/Users/ngraetz/Documents/repos/g_formula/'
 local_cores <- 1
 use_image <- FALSE
 image_path <- ''
 
 ## Set up packages and functions.
 if(!use_image) {
-setwd(repo)
 library(session)
 library(data.table)
 library(tidyverse)
@@ -34,10 +32,10 @@ source("./gfit.R")
 DF <- readRDS('./fragile_families_clean.RDS')
 
 ## Save image to use on secure remote server (not connected to internet)
-save.image(paste0(repo, 'computing_image.RData'))
+save.image(paste0('./computing_image.RData'))
 }
 if(use_image) {
-  load(paste0(repo, 'computing_image.RData'))
+  load(paste0('./computing_image.RData'))
 }
 
 ## COME BACK TO THIS: for now, override irregularly spaced age/year to be equal (1-5), and the put it back at the end. I don't know how to handle this.
