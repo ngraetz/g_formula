@@ -30,62 +30,97 @@ gfit.init <- function(formulas, families, functions, data=NULL, kwargs=NULL){
     })
 }
 
+# SURVEY WEIGHTS: function for running multiple moel fits simulataneously
+gfit.init.survey <- function(formulas, families, functions, survey_design, data=NULL, kwargs=NULL){
+  if(class(formulas) != "list"){
+    stop("formulas argument must be a list of formulas.")
+  }
+  if(class(families) != "list"){
+    stop("families argument must be a list of family objects.")
+  }
+  if(class(functions) != "list"){
+    stop("functions argument must be a list of functions.")
+  }
+  parLengths <- sapply(list(formulas, families, functions), length)
+  if(length(unique(parLengths)) != 1){
+    stop("families, formulas, and functions arguments must be same length.")
+  }
+  if(is.null(kwargs)){
+    kwargs <- lapply(1:length(formulas), function(i) NULL)
+  }
+  if(length(kwargs) != length(formulas)){
+    stop("kwargs must be a list of lists, equal in length to formulas.")
+  }
+  lapply(1:length(formulas), function(i){
+    do.call(
+      functions[[i]],
+      c(
+        list(formula=formulas[[i]], family=families[[i]], data=data, design=survey_design),
+        kwargs[[i]]
+      )
+    )
+  })
+}
+
 # Helper function for multinomial and logistic
 simPredict <- function(DF, model_list, model_index){
     model_ <- model_list[[model_index]]
-    if(class(model_)[1] == "multinom"){
+    if("multinom" %in% class(model_)[1]){
         probs <- predict(model_, type="probs", newdata=DF)
         opts <- colnames(probs)
         sim <- apply(probs, 1, function(p) sample(opts, 1, prob=p))
     }
-    if(class(model_)[1] == "glm"){
-        if(model_$family$family == 'binomial') sim <- rbinom(nrow(DF), 1, predict(model_, newdata=DF, type="response"))
+    if("glm" %in% class(model_)){
+        if(model_$family$family %in% c('binomial','quasibinomial')) sim <- rbinom(nrow(DF), 1, predict(model_, newdata=DF, type="response"))
         if(model_$family$family == 'gaussian') sim <- predict(model_, newdata=DF)
     }
     sim
 }
 
-# Helper function for drawing stochastically from natural course distribution (right now just multinomial and logistic).
+# Helper function for drawing stochastically from natural course distribution.
 # Nick note: I don't totally understand why we draw stochastically from the variable distribution instead of literally using the 
 # values for each individual from the desired course... doesn't this kind of fuck up the covariance within individuals... 
 # I guess that doesn't really matter though because it's not like we do anything with individual simulants after the fact.
 simScenario <- function(DF, model_list, course_DF, model_index){
   model_ <- model_list[[model_index]]
   target_var_name <- all.vars(model_$call$formula)[1] ## Infer target variable from DV specified in model formula.
-  if(class(model_)[1] == "multinom"){
-    ## Get probability distribution from provided course simulation (natural course or intervention course).
-    course_probs <- course_DF %>%              ## Use course DF to get probability distribution.
-      filter(year == max(DF$year)) %>%         ## Sample over course distribution in the year currently being updated.
-      select_(target = target_var_name) %>%
-      count(target) %>%
-      mutate(freq = n / sum(n)) %>% 
-      select(target, freq) %>%
-      spread(target, freq)
-    probs <- do.call("rbind", replicate(nrow(DF), course_probs, simplify = FALSE))
-    opts <- colnames(probs)
-    sim <- apply(probs, 1, function(p) sample(opts, 1, prob=p))
-  }
-  if(class(model_)[1] == "glm"){
-    if(model_$family$family == 'binomial') {
-      course_prob <- course_DF %>% 
+    # if(class(model_)[1] == "multinom"){
+    #   ## Get probability distribution from provided course simulation (natural course or intervention course).
+    #   course_probs <- course_DF %>%              ## Use course DF to get probability distribution.
+    #     filter(year == max(DF$year)) %>%         ## Sample over course distribution in the year currently being updated.
+    #     select_(target = target_var_name) %>%
+    #     count(target) %>%
+    #     mutate(freq = n / sum(n)) %>% 
+    #     select(target, freq) %>%
+    #     spread(target, freq)
+    #   probs <- do.call("rbind", replicate(nrow(DF), course_probs, simplify = FALSE))
+    #   opts <- colnames(probs)
+    #   sim <- apply(probs, 1, function(p) sample(opts, 1, prob=p))
+    # }
+    # if("glm" %in% class(model_)){
+    #   if(model_$family$family %in% c('binomial','quasibinomial')) {
+    #     course_prob <- course_DF %>% 
+    #     filter(year == max(DF$year)) %>%
+    #     select_(target = target_var_name) %>%
+    #     summarise(mean(target, na.rm=T))
+    #     probs <- rep(as.numeric(course_prob), nrow(DF))
+    #     sim <- rbinom(nrow(DF), 1, probs)
+    #   }
+    #   if(model_$family$family == 'gaussian') {
+    #     course_mean <- course_DF %>% 
+    #       filter(year == max(DF$year)) %>%
+    #       select_(target = target_var_name) %>%
+    #       summarise(mean(target, na.rm=T))
+    #     course_sd <- course_DF %>% 
+    #       filter(year == max(DF$year)) %>%
+    #       select_(target = target_var_name) %>%
+    #       summarise(sd(target, na.rm=T))
+    #     sim <- rnorm(nrow(DF), mean = as.numeric(course_mean), sd = as.numeric(course_sd))
+    #   }
+    # }
+    sim <- course_DF %>% 
       filter(year == max(DF$year)) %>%
-      select_(target = target_var_name) %>%
-      summarise(mean(target, na.rm=T))
-      probs <- rep(as.numeric(course_prob), nrow(DF))
-      sim <- rbinom(nrow(DF), 1, probs)
-    }
-    if(model_$family$family == 'gaussian') {
-      course_mean <- course_DF %>% 
-        filter(year == max(DF$year)) %>%
-        select_(target = target_var_name) %>%
-        summarise(mean(target, na.rm=T))
-      course_sd <- course_DF %>% 
-        filter(year == max(DF$year)) %>%
-        select_(target = target_var_name) %>%
-        summarise(sd(target, na.rm=T))
-      sim <- rnorm(nrow(DF), mean = as.numeric(course_mean), sd = as.numeric(course_sd))
-    }
-  }
+      select_(target = target_var_name)
   sim
 }
 
@@ -98,12 +133,9 @@ assert_intervention_rules <- function(DF, rule) {
 }
 
 # run the lag updates and the deterministic and probabilistic rules
-progressSimulation <- function(data, lags, rules, models, intervention_rules=NULL, natural_DF=NULL, intervention_DF=NULL){
-  ## Start at t=0.
+progressSimulation <- function(data, lags, rules, models, intervention_rules=NULL, natural_DF=NULL, intervention_DF=NULL, year_step=1, end_year){
   require(dplyr)
-  times <- sort(unique(data$year))
-  simDF <- filter(data, year == min(year)) %>%
-    mutate(id=1:n())
+  simDF <- data
   ## We have to assert the intervention rules at t=0 as well as in updating below.
   if(!is.null(intervention_rules)) {
     for(r in names(intervention_rules)){
@@ -131,12 +163,14 @@ progressSimulation <- function(data, lags, rules, models, intervention_rules=NUL
     }
   }  
   ## Simulate forward year by year, updating all variables according to provided deterministic/probablistic rules.
-  for(y in times[2:length(times)]){
+  message('Beginning simulation course at ', year_step, ' year(s) after baseline.')
+  for(y in seq(year_step, end_year, by=year_step)){
+    message(paste0('   Simulating forward year ', y, '/', end_year, '...'))
     ## Progress forward one year and index lagged variables for this step.
     upDF <- simDF %>%
       filter(year == max(year)) %>%
-      mutate(year=year+1) %>%
-      mutate(age=age+1) %>%
+      mutate(year=year+year_step) %>%
+      mutate(age=age+year_step) %>%
       rbind(simDF) %>%
       arrange(id, year) %>%
       group_by(id)
@@ -156,6 +190,8 @@ progressSimulation <- function(data, lags, rules, models, intervention_rules=NUL
       }
     }
     ## Add updated time step to simulated DF.
+    missing_cols <- names(upDF)[!(names(upDF) %in% names(simDF))]
+    if(length(missing_cols>0)) message(missing_cols)
     simDF <- rbind(simDF, upDF)
   }
   simDF
@@ -267,17 +303,21 @@ compile_sims_simple <- function(name, bs) {
   df <- bind_rows(lapply(1:length(bs), function(i){
     bs[[i]][[name]] %>%
       mutate(sim=i)})) %>%
+      mutate(c_ppvt = replace_na(c_ppvt, 0)) %>%
     group_by(age, sim) %>%
     summarize(
       mppvt = mean(c_ppvt), 
-      married = mean(bin_married),
-      lesshs = mean(bin_lesshs),
+      fabsent = mean(f_absent),
+      #lesshs = mean(bin_lesshs),
+      #povratio = mean(m_povratio),
       pov = mean(bin_pov),
       jail = mean(m_f_in_jail),
       depression = mean(m_depression),
       unemployed = mean(bin_unemployed),
       censor = mean(censor),
       mwodtke = mean(wodtke)
+      #mmaterial = mean(m_material),
+      #mstress = mean(m_stress)
     ) %>%
     select(-sim) %>%
     summarise_all(
@@ -295,6 +335,38 @@ compile_sims_simple <- function(name, bs) {
   return(df)
 }
 
+compile_sims_simple_survey <- function(name, bs) {
+  message(name)
+  df <- bind_rows(lapply(1:length(bs), function(i){
+    bs[[i]][[name]] %>%
+      mutate(sim=i)})) %>%
+    group_by(age, sim) %>%
+    summarize(
+      mppvt = weighted.mean(c_ppvt, mweight), 
+      married = weighted.mean(bin_married, mweight),
+      lesshs = weighted.mean(bin_lesshs, mweight),
+      pov = weighted.mean(bin_pov, mweight),
+      jail = weighted.mean(m_f_in_jail, mweight),
+      depression = weighted.mean(m_depression, mweight),
+      unemployed = weighted.mean(bin_unemployed, mweight),
+      censor = weighted.mean(censor, mweight),
+      mwodtke = weighted.mean(wodtke, mweight)
+    ) %>%
+    select(-sim) %>%
+    summarise_all(
+      list(
+        mean = mean, 
+        lwr = function(x) quantile(x, probs=.025),
+        upr = function(x) quantile(x, probs=.975))) %>%
+    ungroup %>%
+    gather("Metric", "Value", -age) %>%
+    mutate(measure=gsub("_[A-z ]*", "", Metric)) %>%
+    mutate(statistic=gsub("[A-z ]*_", "", Metric)) %>%
+    select(-Metric) %>%
+    spread("statistic", "Value") %>%
+    mutate(type=name)
+  return(df)
+}
 
 compile_sims_table <- function(name, bs) {
   message(name)
@@ -304,15 +376,40 @@ compile_sims_table <- function(name, bs) {
     group_by(age, sim) %>%
     summarize(
       mppvt = mean(c_ppvt), 
-      married = mean(bin_married),
-      lesshs = mean(bin_lesshs),
+      fabsent = mean(f_absent),
+      #lesshs = mean(bin_lesshs),
+      #povratio = mean(m_povratio),
       pov = mean(bin_pov),
       jail = mean(m_f_in_jail),
       depression = mean(m_depression),
       unemployed = mean(bin_unemployed),
       censor = mean(censor),
-      mwodtke = mean(wodtke)
+      mwodtke = mean(wodtke),
+      #mmaterial = mean(m_material),
+      #mstress = mean(m_stress)
       ) %>%
+    mutate(name=name)
+  df <- dcast(as.data.table(df), age ~ name + sim, value.var=c('mppvt','fabsent','pov','jail','depression','unemployed','censor','mwodtke'))
+  return(df)
+}
+
+compile_sims_table_survey <- function(name, bs) {
+  message(name)
+  df <- bind_rows(lapply(1:length(bs), function(i){
+    bs[[i]][[name]] %>%
+      mutate(sim=i)})) %>%
+    group_by(age, sim) %>%
+    summarize(
+      mppvt = weighted.mean(c_ppvt, mweight), 
+      married = weighted.mean(bin_married, mweight),
+      lesshs = weighted.mean(bin_lesshs, mweight),
+      pov = weighted.mean(bin_pov, mweight),
+      jail = weighted.mean(m_f_in_jail, mweight),
+      depression = weighted.mean(m_depression, mweight),
+      unemployed = weighted.mean(bin_unemployed, mweight),
+      censor = weighted.mean(censor, mweight),
+      mwodtke = weighted.mean(wodtke, mweight)
+    ) %>%
     mutate(name=name)
   df <- dcast(as.data.table(df), age ~ name + sim, value.var=c('mppvt','married','lesshs','pov','jail','depression','unemployed','censor','mwodtke'))
   return(df)
